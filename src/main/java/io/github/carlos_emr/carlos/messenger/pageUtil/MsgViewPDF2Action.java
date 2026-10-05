@@ -133,9 +133,10 @@ public class MsgViewPDF2Action extends ActionSupport {
      * a missing, non-numeric or out-of-range file_id gets HTTP 400, attachment XML
      * that cannot be read gets HTTP 500, an attachment that does not decode to a PDF
      * (one that failed to render when it was attached) gets HTTP 500, and a PDF that
-     * cannot be written gets the HTTP 500 that {@link Doc2PDF#PrintPDFFromBytes} sends.
-     * Only a session with no PDF attachment, where nothing has been written, falls
-     * back to the view result.</p>
+     * cannot be written gets HTTP 500 from {@link Doc2PDF#PrintPDFFromBytes} if nothing
+     * has been sent yet (a stream cut off part-way keeps its 200). Only a session with
+     * no PDF attachment, where nothing has been written, falls back to the view
+     * result.</p>
      *
      * @return {@link #NONE} after streaming the PDF or sending an error response;
      *         {@link #SUCCESS} only when the session holds no PDF attachment
