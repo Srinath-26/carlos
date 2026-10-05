@@ -131,8 +131,9 @@ public class MsgAttachPDF2Action extends ActionSupport {
      *
      * @return {@link #SUCCESS} when all attachments are complete; {@code "attaching"}
      *         when more attachments are pending; {@link #NONE} when the request
-     *         is rejected with HTTP 405 (non-POST) or after streaming a preview PDF
-     *         directly to the response
+     *         is rejected with HTTP 405 (non-POST), after streaming a preview PDF
+     *         directly to the response, or after answering an attachment that could
+     *         not be stored (no message session bean, or an error) with HTTP 500
      * @throws IOException if there's an error writing to the response stream
      * @throws ServletException if there's a servlet processing error
      * @throws SecurityException if the current user lacks {@code _msg} write privilege
@@ -221,8 +222,12 @@ public class MsgAttachPDF2Action extends ActionSupport {
                 logger.error("Error: " + e.getMessage(), e);
             }
 
+            // The attachment step failed: own the error response instead of a blank page
+            if (!response.isCommitted()) {
+                response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not attach the PDF");
+            }
+            return NONE;
         }
-        return null;
     }
     /**
      * Total number of attachments to be processed in this session.

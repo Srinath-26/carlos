@@ -31,7 +31,8 @@
 package io.github.carlos_emr.carlos.messenger.pageUtil;
 
 import java.io.IOException;
-import java.util.Vector;
+import java.util.Arrays;
+import java.util.List;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,6 +45,7 @@ import io.github.carlos_emr.carlos.utility.SpringUtils;
 
 import io.github.carlos_emr.carlos.util.Doc2PDF;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.struts2.ActionSupport;
 import org.apache.struts2.ServletActionContext;
 import org.apache.struts2.interceptor.parameter.StrutsParameter;
@@ -74,9 +76,9 @@ import org.apache.struts2.interceptor.parameter.StrutsParameter;
  *
  * <p>Error handling:</p>
  * <ul>
- * <li>Returns NONE after streaming PDF content directly to the response</li>
- * <li>Logs exceptions but doesn't propagate them to user</li>
- * <li>Validates file_id before accessing the attachment vector</li>
+ *   <li>Returns NONE after streaming PDF content directly to the response</li>
+ *   <li>Rejects a missing, non-numeric or out-of-range file_id with HTTP 400</li>
+ *   <li>Answers unreadable attachment XML, or an attachment that is not a PDF, with HTTP 500</li>
  * </ul>
  *
  * @version 2.0
@@ -86,6 +88,16 @@ import org.apache.struts2.interceptor.parameter.StrutsParameter;
  * @see MsgAttachPDF2Action
  */
 public class MsgViewPDF2Action extends ActionSupport {
+    /**
+     * Error message sent with HTTP 400 when file_id is missing, not a number, or out of range.
+     */
+    private static final String INVALID_FILE_ID = "Invalid or out-of-range file_id";
+
+    /**
+     * Bytes every PDF starts with; checked before anything is written to the response.
+     */
+    private static final byte[] PDF_HEADER = new byte[] {'%', 'P', 'D', 'F', '-'};
+
     /**
      * HTTP request object for accessing session data.
      */
@@ -117,13 +129,16 @@ public class MsgViewPDF2Action extends ActionSupport {
      * under the key "PDFAttachment" as an XML string. The file_id parameter
      * indicates which PDF to extract from the XML (0-based index).</p>
      *
-     * <p>Error handling is minimal - exceptions are logged but the method
-     * returns SUCCESS regardless to prevent error pages from displaying.
-     * This could result in blank responses if the PDF cannot be retrieved.</p>
+     * <p>Every path that touches the response owns it and returns {@link #NONE}:
+     * a missing, non-numeric or out-of-range file_id gets HTTP 400, attachment XML
+     * that cannot be read gets HTTP 500, an attachment that does not decode to a PDF
+     * (one that failed to render when it was attached) gets HTTP 500, and a PDF that
+     * cannot be written gets the HTTP 500 that {@link Doc2PDF#PrintPDFFromBytes} sends.
+     * Only a session with no PDF attachment, where nothing has been written, falls
+     * back to the view result.</p>
      *
-     * @return {@link #NONE} after streaming PDF content directly to the response or
-     *         after rejecting an invalid file_id request; {@link #SUCCESS} when no PDF
-     *         is streamed or when a caught exception is handled
+     * @return {@link #NONE} after streaming the PDF or sending an error response;
+     *         {@link #SUCCESS} only when the session holds no PDF attachment
      * @throws IOException if there's an error writing to response stream
      * @throws ServletException if there's a servlet processing error
      * @throws SecurityException if user lacks read permissions for messaging
@@ -134,35 +149,63 @@ public class MsgViewPDF2Action extends ActionSupport {
             throw new SecurityException("missing required sec object (_msg)");
         }
 
-        try {
-            // Retrieve PDF attachment XML from session
-            String pdfAttachment = (String) request.getSession().getAttribute("PDFAttachment");
-            String id = this.getFile_id();
-            int fileID = Integer.parseInt(id);
-
-            if (pdfAttachment != null && pdfAttachment.length() != 0) {
-                // Extract all CONTENT tags from XML
-                Vector attVector = Doc2PDF.getXMLTagValue(pdfAttachment, "CONTENT");
-
-                // Reject invalid file_id values before accessing the attachment vector
-                if (attVector == null || fileID < 0 || fileID >= attVector.size()) {
-                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid or out-of-range file_id");
-                    return NONE;
-                }
-                // Get the specific PDF by index
-                String pdfFile = (String) attVector.elementAt(fileID);
-                // Stream PDF to browser
-                Doc2PDF.PrintPDFFromBin(response, pdfFile);
-                return NONE;
-            }
-        } catch (Exception e) {
-            // Log error but return SUCCESS to avoid error page
-            MiscUtils.getLogger().error("Error", e);
+        // Retrieve PDF attachment XML from session
+        String pdfAttachment = (String) request.getSession().getAttribute("PDFAttachment");
+        if (pdfAttachment == null || pdfAttachment.isEmpty()) {
+            // Nothing has been written to the response, so the view result can still render
             return SUCCESS;
         }
 
-        return SUCCESS;
+        int fileID;
+        try {
+            fileID = Integer.parseInt(this.getFile_id());
+        } catch (NumberFormatException e) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
+            return NONE;
+        }
+
+        // Extract all CONTENT tags from XML
+        List<?> attachments;
+        try {
+            attachments = Doc2PDF.getXMLTagValue(pdfAttachment, "CONTENT");
+        } catch (Exception e) {
+            // The session holds attachment XML this action cannot read: a server-side fault
+            MiscUtils.getLogger().error("Could not read the PDF attachments held in the session", e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not read the PDF attachment");
+            return NONE;
+        }
+
+        // Reject invalid file_id values before accessing the attachment list
+        if (fileID < 0 || fileID >= attachments.size()) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
+            return NONE;
+        }
+
+        // Base64 decoding is lenient: an attachment that failed to render is stored with
+        // "null" as its content, which decodes to a few bytes that are not a PDF
+        byte[] pdf = Base64.decodeBase64((String) attachments.get(fileID));
+        if (!isPdf(pdf)) {
+            MiscUtils.getLogger().warn("PDF attachment {} held in the session is not a PDF", fileID);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not read the PDF attachment");
+            return NONE;
+        }
+
+        // Stream PDF to browser; Doc2PDF sends its own error response if it cannot
+        Doc2PDF.PrintPDFFromBytes(response, pdf);
+        return NONE;
     }
+
+    /**
+     * Checks that decoded attachment bytes start with the PDF header.
+     *
+     * @param bytes byte[] the decoded attachment
+     * @return true if the bytes start with {@code %PDF-}
+     */
+    private static boolean isPdf(byte[] bytes) {
+        return bytes.length >= PDF_HEADER.length
+                && Arrays.equals(bytes, 0, PDF_HEADER.length, PDF_HEADER, 0, PDF_HEADER.length);
+    }
+
     /**
      * Attachment parameter, currently not used in implementation.
      */
