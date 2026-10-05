@@ -78,6 +78,7 @@ import org.apache.struts2.interceptor.parameter.StrutsParameter;
  * <ul>
  *   <li>Returns NONE after streaming PDF content directly to the response</li>
  *   <li>Rejects a missing, non-numeric or out-of-range file_id with HTTP 400</li>
+ *   <li>Answers a session that holds no PDF attachment with HTTP 404</li>
  *   <li>Answers unreadable attachment XML, or an attachment that is not a PDF, with HTTP 500</li>
  * </ul>
  *
@@ -92,6 +93,11 @@ public class MsgViewPDF2Action extends ActionSupport {
      * Error message sent with HTTP 400 when file_id is missing, not a number, or out of range.
      */
     private static final String INVALID_FILE_ID = "Invalid or out-of-range file_id";
+
+    /**
+     * Error message sent with HTTP 404 when the session holds no PDF attachment to view.
+     */
+    private static final String NO_ATTACHMENT = "No PDF attachment is open; open the message's attachments again";
 
     /**
      * Bytes every PDF starts with; checked before anything is written to the response.
@@ -129,17 +135,15 @@ public class MsgViewPDF2Action extends ActionSupport {
      * under the key "PDFAttachment" as an XML string. The file_id parameter
      * indicates which PDF to extract from the XML (0-based index).</p>
      *
-     * <p>Every path that touches the response owns it and returns {@link #NONE}:
-     * a missing, non-numeric or out-of-range file_id gets HTTP 400, attachment XML
-     * that cannot be read gets HTTP 500, an attachment that does not decode to a PDF
-     * (one that failed to render when it was attached) gets HTTP 500, and a PDF that
-     * cannot be written gets HTTP 500 from {@link Doc2PDF#PrintPDFFromBytes} if nothing
-     * has been sent yet (a stream cut off part-way keeps its 200). Only a session with
-     * no PDF attachment, where nothing has been written, falls back to the view
-     * result.</p>
+     * <p>Every path owns the response and returns {@link #NONE}: a missing or
+     * non-numeric file_id gets HTTP 400, a session with no PDF attachment gets
+     * HTTP 404, an out-of-range file_id gets HTTP 400, attachment XML that cannot be
+     * read gets HTTP 500, an attachment that does not decode to a PDF (one that failed
+     * to render when it was attached) gets HTTP 500, and a PDF that cannot be written
+     * gets HTTP 500 from {@link Doc2PDF#PrintPDFFromBytes} if nothing has been sent yet
+     * (a stream cut off part-way keeps its 200).</p>
      *
-     * @return {@link #NONE} after streaming the PDF or sending an error response;
-     *         {@link #SUCCESS} only when the session holds no PDF attachment
+     * @return {@link #NONE} always, after streaming the PDF or sending an error response
      * @throws IOException if there's an error writing to response stream
      * @throws ServletException if there's a servlet processing error
      * @throws SecurityException if user lacks read permissions for messaging
@@ -150,18 +154,19 @@ public class MsgViewPDF2Action extends ActionSupport {
             throw new SecurityException("missing required sec object (_msg)");
         }
 
-        // Retrieve PDF attachment XML from session
-        String pdfAttachment = (String) request.getSession().getAttribute("PDFAttachment");
-        if (pdfAttachment == null || pdfAttachment.isEmpty()) {
-            // Nothing has been written to the response, so the view result can still render
-            return SUCCESS;
-        }
-
+        // A malformed request is rejected before looking at what the session holds
         int fileID;
         try {
             fileID = Integer.parseInt(this.getFile_id());
         } catch (NumberFormatException e) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
+            return NONE;
+        }
+
+        // Retrieve PDF attachment XML from session; ViewPDFAttachment.jsp puts it there
+        String pdfAttachment = (String) request.getSession().getAttribute("PDFAttachment");
+        if (pdfAttachment == null || pdfAttachment.isEmpty()) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, NO_ATTACHMENT);
             return NONE;
         }
 

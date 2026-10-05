@@ -35,6 +35,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -44,10 +45,9 @@ import io.github.carlos_emr.carlos.test.base.CarlosWebTestBase;
  * Tests for {@link MsgViewPDF2Action}'s direct-response contract (#2667).
  *
  * <p>The action streams one PDF out of the attachment XML held in the session.
- * Every path that writes to the response must end with {@code NONE}, so Struts
- * never renders the view result over the PDF or over an error status. Only a
- * session with no attachment, where nothing has been written, may fall back to
- * {@code SUCCESS}.
+ * Every path owns the response and ends with {@code NONE}, so Struts never renders
+ * a page over the PDF or over an error status, and a request with nothing to show
+ * gets a 4xx instead of a blank page.
  *
  * @since 2026-10-05
  */
@@ -171,19 +171,35 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
-    @ParameterizedTest(name = "PDFAttachment={0}")
-    @NullSource
-    @ValueSource(strings = {""})
-    @DisplayName("should fall back to the view result, writing nothing, when the session holds no attachment")
-    void shouldReturnSuccess_whenSessionHoldsNoAttachment(String pdfAttachment) throws Exception {
+    @ParameterizedTest(name = "PDFAttachment={0}, file_id={1}")
+    @CsvSource(value = {"NULL, 0", "NULL, 99", "'', 0", "'', 99"}, nullValues = "NULL")
+    @DisplayName("should answer a session with no attachment with 404 and return NONE, not a blank page")
+    void shouldReturn404_whenSessionHoldsNoAttachment(String pdfAttachment, String fileId) throws Exception {
         allowPrivilege("_msg", "r");
         setSessionAttribute("PDFAttachment", pdfAttachment);
-        action.setFile_id("0");
+        action.setFile_id(fileId);
 
         String result = executeAction(action);
 
-        assertThat(result).isEqualTo(ActionSupport.SUCCESS);
-        assertThat(getMockResponse().isCommitted()).isFalse();
+        assertThat(result).isEqualTo(ActionSupport.NONE);
+        assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+        assertThat(getMockResponse().getErrorMessage()).contains("No PDF attachment");
+        assertThat(getMockResponse().getForwardedUrl()).isNull();
+        assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "file_id={0}")
+    @NullSource
+    @ValueSource(strings = {"", "abc"})
+    @DisplayName("should still answer a missing or non-numeric file_id with 400 when the session holds no attachment")
+    void shouldReturn400_whenFileIdIsNotANumberAndSessionHoldsNoAttachment(String fileId) throws Exception {
+        allowPrivilege("_msg", "r");
+        action.setFile_id(fileId);
+
+        String result = executeAction(action);
+
+        assertThat(result).isEqualTo(ActionSupport.NONE);
+        assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 }
