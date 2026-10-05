@@ -173,7 +173,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
     @Test
     @DisplayName("should check file_id before reading the session, answering 400 even when the attachment XML is unreadable")
-    void shouldReturn400_beforeReadingAttachmentXml_whenFileIdIsNotANumber() throws Exception {
+    void shouldReturn400BeforeReadingAttachmentXml_whenFileIdIsNotANumber() throws Exception {
         allowPrivilege("_msg", "r");
         setSessionAttribute("PDFAttachment", "<PDF><CONTENT>" + encode(FIRST_PDF));
         action.setFile_id("abc");
