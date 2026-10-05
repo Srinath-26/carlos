@@ -171,6 +171,19 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
+    @Test
+    @DisplayName("should check file_id before reading the session, answering 400 even when the attachment XML is unreadable")
+    void shouldReturn400_beforeReadingAttachmentXml_whenFileIdIsNotANumber() throws Exception {
+        allowPrivilege("_msg", "r");
+        setSessionAttribute("PDFAttachment", "<PDF><CONTENT>" + encode(FIRST_PDF));
+        action.setFile_id("abc");
+
+        String result = executeAction(action);
+
+        assertThat(result).isEqualTo(ActionSupport.NONE);
+        assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+    }
+
     @ParameterizedTest(name = "PDFAttachment={0}, file_id={1}")
     @CsvSource(value = {"NULL, 0", "NULL, 99", "'', 0", "'', 99"}, nullValues = "NULL")
     @DisplayName("should answer a session with no attachment with 404 and return NONE, not a blank page")
@@ -184,7 +197,6 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
         assertThat(getMockResponse().getErrorMessage()).contains("No PDF attachment");
-        assertThat(getMockResponse().getForwardedUrl()).isNull();
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 

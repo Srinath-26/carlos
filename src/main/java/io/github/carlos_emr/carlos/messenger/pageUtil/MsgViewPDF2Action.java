@@ -125,23 +125,24 @@ public class MsgViewPDF2Action extends ActionSupport {
      * <p>This method performs the following operations:</p>
      * <ol>
      *   <li>Validates that the user has read permissions for messaging</li>
+     *   <li>Reads file_id, the 0-based index of the PDF to show</li>
      *   <li>Retrieves the PDF attachment XML from the session</li>
      *   <li>Parses the XML to extract CONTENT tags containing PDFs</li>
      *   <li>Retrieves the specific PDF by its index (file_id)</li>
-     *   <li>Streams the PDF binary content to the browser</li>
+     *   <li>Checks that it is a PDF, then streams it to the browser</li>
      * </ol>
      *
      * <p>The method expects the PDF attachment data to be stored in the session
      * under the key "PDFAttachment" as an XML string. The file_id parameter
      * indicates which PDF to extract from the XML (0-based index).</p>
      *
-     * <p>Every path owns the response and returns {@link #NONE}: a missing or
-     * non-numeric file_id gets HTTP 400, a session with no PDF attachment gets
-     * HTTP 404, an out-of-range file_id gets HTTP 400, attachment XML that cannot be
-     * read gets HTTP 500, an attachment that does not decode to a PDF (one that failed
-     * to render when it was attached) gets HTTP 500, and a PDF that cannot be written
-     * gets HTTP 500 from {@link Doc2PDF#PrintPDFFromBytes} if nothing has been sent yet
-     * (a stream cut off part-way keeps its 200).</p>
+     * <p>Every path owns the response and returns {@link #NONE}. In the order they
+     * are checked: a missing or non-numeric file_id gets HTTP 400, a session with no
+     * PDF attachment gets HTTP 404, attachment XML that cannot be read gets HTTP 500,
+     * an out-of-range file_id gets HTTP 400, an attachment that does not decode to a
+     * PDF (one that failed to render when it was attached) gets HTTP 500, and a PDF
+     * that cannot be written gets HTTP 500 from {@link Doc2PDF#PrintPDFFromBytes} if
+     * nothing has been sent yet (a stream cut off part-way keeps its 200).</p>
      *
      * @return {@link #NONE} always, after streaming the PDF or sending an error response
      * @throws IOException if there's an error writing to response stream
