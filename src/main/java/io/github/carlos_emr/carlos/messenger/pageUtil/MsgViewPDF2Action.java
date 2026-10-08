@@ -39,6 +39,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import io.github.carlos_emr.carlos.managers.SecurityInfoManager;
+import io.github.carlos_emr.carlos.utility.ErrorPageMessage;
 import io.github.carlos_emr.carlos.utility.LoggedInInfo;
 import io.github.carlos_emr.carlos.utility.MiscUtils;
 import io.github.carlos_emr.carlos.utility.SpringUtils;
@@ -80,6 +81,8 @@ import org.apache.struts2.interceptor.parameter.StrutsParameter;
  *   <li>Rejects a missing, non-numeric or out-of-range file_id with HTTP 400</li>
  *   <li>Answers a session that holds no PDF attachment with HTTP 404</li>
  *   <li>Answers unreadable attachment XML, or an attachment that is not a PDF, with HTTP 500</li>
+ *   <li>Shows each refusal on the CARLOS error page with a short translated message saying what to do
+ *       ({@link ErrorPageMessage}); no request value is echoed</li>
  * </ul>
  *
  * @version 2.0
@@ -90,14 +93,19 @@ import org.apache.struts2.interceptor.parameter.StrutsParameter;
  */
 public class MsgViewPDF2Action extends ActionSupport {
     /**
-     * Error message sent with HTTP 400 when file_id is missing, not a number, or out of range.
+     * Message shown on the error page with HTTP 400 when file_id is missing, not a number, or out of range.
      */
-    private static final String INVALID_FILE_ID = "Invalid or out-of-range file_id";
+    static final String INVALID_FILE_ID = "messenger.ViewPDFFile.invalidFileId";
 
     /**
-     * Error message sent with HTTP 404 when the session holds no PDF attachment to view.
+     * Message shown on the error page with HTTP 404 when the session holds no PDF attachment to view.
      */
-    private static final String NO_ATTACHMENT = "No PDF attachment is open; open the message's attachments again";
+    static final String NO_ATTACHMENT = "messenger.ViewPDFFile.noAttachment";
+
+    /**
+     * Message shown on the error page with HTTP 500 when the attachment held in the session cannot be read.
+     */
+    static final String UNREADABLE = "messenger.ViewPDFFile.unreadable";
 
     /**
      * Bytes every PDF starts with; checked before anything is written to the response.
@@ -160,14 +168,14 @@ public class MsgViewPDF2Action extends ActionSupport {
         try {
             fileID = Integer.parseInt(this.getFile_id());
         } catch (NumberFormatException e) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
+            ErrorPageMessage.sendError(request, response, HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
             return NONE;
         }
 
         // Retrieve PDF attachment XML from session; ViewPDFAttachment.jsp puts it there
         String pdfAttachment = (String) request.getSession().getAttribute("PDFAttachment");
         if (pdfAttachment == null || pdfAttachment.isEmpty()) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND, NO_ATTACHMENT);
+            ErrorPageMessage.sendError(request, response, HttpServletResponse.SC_NOT_FOUND, NO_ATTACHMENT);
             return NONE;
         }
 
@@ -178,13 +186,13 @@ public class MsgViewPDF2Action extends ActionSupport {
         } catch (Exception e) {
             // The session holds attachment XML this action cannot read: a server-side fault
             MiscUtils.getLogger().error("Could not read the PDF attachments held in the session", e);
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not read the PDF attachment");
+            ErrorPageMessage.sendError(request, response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, UNREADABLE);
             return NONE;
         }
 
         // Reject invalid file_id values before accessing the attachment list
         if (fileID < 0 || fileID >= attachments.size()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
+            ErrorPageMessage.sendError(request, response, HttpServletResponse.SC_BAD_REQUEST, INVALID_FILE_ID);
             return NONE;
         }
 
@@ -193,7 +201,7 @@ public class MsgViewPDF2Action extends ActionSupport {
         byte[] pdf = Base64.decodeBase64((String) attachments.get(fileID));
         if (!isPdf(pdf)) {
             MiscUtils.getLogger().warn("PDF attachment {} held in the session is not a PDF", fileID);
-            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not read the PDF attachment");
+            ErrorPageMessage.sendError(request, response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, UNREADABLE);
             return NONE;
         }
 

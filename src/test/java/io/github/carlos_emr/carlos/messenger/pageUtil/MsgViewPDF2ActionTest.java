@@ -26,6 +26,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Locale;
+import java.util.ResourceBundle;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -40,6 +42,7 @@ import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import io.github.carlos_emr.carlos.test.base.CarlosWebTestBase;
+import io.github.carlos_emr.carlos.utility.ErrorPageMessage;
 
 /**
  * Tests for {@link MsgViewPDF2Action}'s direct-response contract (#2667).
@@ -120,6 +123,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.invalidFileId");
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
@@ -136,6 +140,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.invalidFileId");
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
@@ -150,6 +155,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.unreadable");
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
@@ -167,6 +173,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.unreadable");
         assertThat(getMockResponse().getContentType()).isNull();
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
@@ -182,6 +189,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.invalidFileId");
     }
 
     @ParameterizedTest(name = "PDFAttachment={0}, file_id={1}")
@@ -196,7 +204,7 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
-        assertThat(getMockResponse().getErrorMessage()).contains("No PDF attachment");
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.noAttachment");
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
     }
 
@@ -212,6 +220,14 @@ class MsgViewPDF2ActionTest extends CarlosWebTestBase {
 
         assertThat(result).isEqualTo(ActionSupport.NONE);
         assertThat(getMockResponse().getStatus()).isEqualTo(HttpServletResponse.SC_BAD_REQUEST);
+        assertThat(getMockRequest().getAttribute(ErrorPageMessage.ATTRIBUTE)).isEqualTo("messenger.ViewPDFFile.invalidFileId");
         assertThat(getMockResponse().getContentAsByteArray()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {MsgViewPDF2Action.INVALID_FILE_ID, MsgViewPDF2Action.NO_ATTACHMENT, MsgViewPDF2Action.UNREADABLE})
+    @DisplayName("should show error messages that exist in the bundle, not raw keys")
+    void shouldUseBundleKeys_forErrorMessages(String key) {
+        assertThat(ResourceBundle.getBundle("oscarResources", Locale.ENGLISH).getString(key)).isNotBlank();
     }
 }
